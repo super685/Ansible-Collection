@@ -1,0 +1,79 @@
+- name: Debian update
+  hosts: DEBIAN
+  become: yes
+
+  tasks:
+    - name: Updating the package manager
+      apt:
+        update_cache: yes
+        force: yes
+
+    - name: System update
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      register: result
+
+    - name: System restart
+      ansible.builtin.reboot:
+      when: result.changed
+
+    - name: Wait for restart
+      wait_for_connection:
+        delay: 30
+        timeout: 300
+      when: result.changed
+
+    - name: Check existence of new repository configuration files
+      stat:
+        path: /etc/apt/sources.list.d/bookworm.list
+      register: repo_check
+
+    - name: Comment old repositories in the sources.list file
+      replace:
+        path: /etc/apt/sources.list
+        regexp: "^deb"
+        replace: "# deb"
+      when: repo_check.stat.exists == False
+
+    - name: Add new repository configuration files
+      blockinfile:
+        path: /etc/apt/sources.list.d/bookworm.list
+        block: |
+          deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
+          deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware
+          deb-src http://deb.debian.org/debian bookworm-backports main contrib non-free non-free-firmware
+
+          # Add more deposits if necessary
+        create: true
+      when: repo_check.stat.exists == False
+
+    - name: Debian 12 package manager update
+      apt:
+        update_cache: yes
+
+    - name: System update to Debian 12
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+      register: result12
+
+    - name: RSystem reboot after updating to Debian 12
+      command: reboot
+      async: 0
+      poll: 0
+      ignore_errors: true
+      when: result12.changed
+
+    - name: Waiting for reboot after upgrading to Debian 12
+      wait_for_connection:
+        delay: 30
+        timeout: 300
+      when: result12.changed
